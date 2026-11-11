@@ -17,18 +17,22 @@ function ac() {
 
 function tone(freq, dur, type, gain, slide) {
   if (muted) return;
-  const audio = ac();
-  const osc = audio.createOscillator();
-  const amp = audio.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(freq, audio.currentTime);
-  if (slide) osc.frequency.exponentialRampToValueAtTime(Math.max(40, slide), audio.currentTime + dur);
-  amp.gain.setValueAtTime(gain, audio.currentTime);
-  amp.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + dur);
-  osc.connect(amp);
-  amp.connect(audio.destination);
-  osc.start();
-  osc.stop(audio.currentTime + dur + 0.02);
+  try {
+    const audio = ac();
+    const osc = audio.createOscillator();
+    const amp = audio.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audio.currentTime);
+    if (slide) osc.frequency.exponentialRampToValueAtTime(Math.max(40, slide), audio.currentTime + dur);
+    amp.gain.setValueAtTime(gain, audio.currentTime);
+    amp.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + dur);
+    osc.connect(amp);
+    amp.connect(audio.destination);
+    osc.start();
+    osc.stop(audio.currentTime + dur + 0.02);
+  } catch {
+    /* Missing or blocked audio should not stop the draft. */
+  }
 }
 
 export const sfx = {

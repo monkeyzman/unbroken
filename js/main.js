@@ -1,6 +1,6 @@
 import { view, paintFight, showStamp, toast } from "./ui.js";
 import { createRun, resolveNext, heroFromId, shareText, fellTo } from "./run.js";
-import { dailyKey, dailySeed, exhibitSeed } from "./rng.js";
+import { dailyKey, dailySeed, exhibitSeed } from "./rng.js?v=2";
 import { tierAfterBoss } from "./foes.js";
 import { isMuted, setMuted, sfx } from "./audio.js";
 
@@ -32,9 +32,15 @@ app.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (!button || button.disabled) return;
   const action = button.dataset.action;
-  if (action !== "skip" && action !== "mute") sfx.tap();
   const fn = actions[action];
   if (fn) fn(button);
+  if (action !== "skip" && action !== "mute") {
+    try {
+      sfx.tap();
+    } catch {
+      /* Sound must not cancel New Run or Draft Again. */
+    }
+  }
 });
 
 const actions = {
@@ -63,7 +69,7 @@ const actions = {
     render();
   },
   "new-run"() {
-    startRun("exhibit", exhibitSeed());
+    startExhibition();
   },
   daily() {
     const daily = dailySeed();
@@ -146,9 +152,13 @@ const actions = {
     copyText(shareText(S.run));
   },
   "draft-again"() {
-    startRun("exhibit", exhibitSeed());
+    startExhibition();
   },
 };
+
+function startExhibition() {
+  startRun("exhibit", exhibitSeed());
+}
 
 function startRun(mode, seed) {
   S.run = createRun(seed, mode);

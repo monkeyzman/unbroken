@@ -41,14 +41,44 @@ export function dailySeed(date = new Date()) {
   return { key, seed: hashString(`unbroken-daily-${key}`) };
 }
 
-export function exhibitSeed() {
-  const buf = new Uint32Array(2);
-  if (globalThis.crypto?.getRandomValues) crypto.getRandomValues(buf);
-  else {
-    buf[0] = Math.floor(Math.random() * 0xffffffff);
-    buf[1] = Date.now() >>> 0;
+const EXHIBIT_NONCE_KEY = "unbroken.exhibit.nonce";
+let memoryNonce = 0;
+
+function nextExhibitNonce() {
+  memoryNonce = (memoryNonce + 1) >>> 0;
+  if (memoryNonce === 0) memoryNonce = 1;
+  try {
+    const store = globalThis.localStorage;
+    if (!store) return memoryNonce;
+    const prev = Number(store.getItem(EXHIBIT_NONCE_KEY));
+    const stored = ((Number.isFinite(prev) ? prev : 0) + 1) >>> 0 || 1;
+    store.setItem(EXHIBIT_NONCE_KEY, String(stored));
+    return (stored ^ memoryNonce) >>> 0 || stored;
+  } catch {
+    return memoryNonce;
   }
-  return (buf[0] ^ buf[1] ^ (Date.now() >>> 0)) >>> 0;
+}
+
+function cryptoWord() {
+  try {
+    const cryptoObj = globalThis.crypto;
+    if (!cryptoObj || typeof cryptoObj.getRandomValues !== "function") return 0;
+    const buf = new Uint32Array(2);
+    cryptoObj.getRandomValues(buf);
+    return (buf[0] ^ buf[1]) >>> 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Fresh seed for a normal draft. Never the daily seed, and a new value every call. */
+export function exhibitSeed() {
+  const nonce = nextExhibitNonce();
+  const time = Date.now() >>> 0;
+  const fuzzy = Math.floor(Math.random() * 0x100000000) >>> 0;
+  let seed = (cryptoWord() ^ time ^ fuzzy ^ Math.imul(nonce, 0x9e3779b1)) >>> 0;
+  if (seed === dailySeed().seed || seed === 0) seed = (0x6d2b79f5 ^ nonce ^ time) >>> 0 || 1;
+  return seed;
 }
 
 export function clamp(n, lo, hi) {
