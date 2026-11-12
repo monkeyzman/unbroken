@@ -2,7 +2,7 @@ import { FACTIONS, ROLES, ROLE_STAT, RARITY_LABEL, STATS, heroTotal } from "./ro
 import { TIERS, BOSSES, tierAfterBoss } from "./foes.js";
 import { STAT_NAME } from "./roster.js";
 import { synergyBands, loudestStat, printedSums, SPECTRUM_BONUS } from "./synergy.js";
-import { portraitSVG, actorArt } from "./portraits.js";
+import { portraitHTML } from "./portraits.js?v=3";
 import { fellTo, rankTitle, shareText } from "./run.js";
 
 export function esc(value) {
@@ -43,7 +43,7 @@ function statBlock(hero) {
 function cardHTML(hero, index, picked) {
   const faction = FACTIONS[hero.faction];
   return `<button class="card rarity-${hero.rarity}${picked ? " picked" : ""}" data-action="highlight" data-i="${index}" aria-pressed="${picked ? "true" : "false"}">
-    <div>${portraitSVG(hero, 72)}<div class="total">TOT ${heroTotal(hero)}</div></div>
+    <div>${portraitHTML(hero, 72, { eager: true })}<div class="total">TOT ${heroTotal(hero)}</div></div>
     <div>
       <div class="card-meta">
         <span class="rarity ${hero.rarity}">${RARITY_LABEL[hero.rarity]}</span>
@@ -60,7 +60,7 @@ function slotsHTML(picks) {
   return ROLES.map((role, i) => {
     const hero = picks[i];
     if (!hero) return `<div class="slot" title="${esc(role.name)}"><span class="small">${role.emoji}</span></div>`;
-    return `<div class="slot filled" title="${esc(hero.name)}">${portraitSVG(hero, 56)}</div>`;
+    return `<div class="slot filled" title="${esc(hero.name)}">${portraitHTML(hero, 56, { eager: true, bare: true })}</div>`;
   }).join("");
 }
 
@@ -160,7 +160,7 @@ function howScreen() {
 function boardScreen() {
   const blocks = BOSSES.map((boss) => {
     return `<article class="panel boss-block">
-      <div class="art">${actorArt({ ...boss, kind: "boss" })}</div>
+      <div class="art">${portraitHTML({ ...boss, kind: "boss" }, 148, { eager: true })}</div>
       <p class="kicker" style="margin:8px 0 0">ROUND ${[5, 10, 15, 20, 25, 30][BOSSES.indexOf(boss)]}</p>
       <h2 class="display">${esc(boss.name)}</h2>
       <p class="quote">“${esc(boss.quote)}”</p>
@@ -216,7 +216,7 @@ function confirmScreen(state) {
   return `<section class="screen">
     <div class="topbar"><span class="kicker">STARTING FIVE</span></div>
     <h2 class="display" style="font-size:42px;margin:0 0 8px">LOCK THEM IN</h2>
-    <div class="squad-row">${picks.map((h) => `<div class="mini" title="${esc(h.name)}">${portraitSVG(h, 48)}</div>`).join("")}</div>
+    <div class="squad-row">${picks.map((h) => `<div class="mini" title="${esc(h.name)}">${portraitHTML(h, 48, { eager: true, bare: true })}</div>`).join("")}</div>
     <div class="stack" style="margin-top:10px">
       ${picks
         .map((h) => {
@@ -250,7 +250,7 @@ function seasonScreen(state) {
     </div>
     ${dotsHTML(run.history, next.round)}
     <article class="poster">
-      <div class="art">${actorArt(next, 120)}</div>
+      <div class="art">${portraitHTML(next, 148, { eager: true })}</div>
       <div class="body">
         <p class="kicker" style="margin:0">${next.kind === "boss" ? esc(next.title) : esc(next.tierName)}</p>
         <h3 class="display">${esc(next.name)}</h3>
@@ -258,7 +258,7 @@ function seasonScreen(state) {
         <div class="trick">${esc(next.banner)}</div>
       </div>
     </article>
-    <div class="faces" style="margin:8px 0">${run.picks.map((h) => `<div class="mini" title="${esc(h.name)}">${portraitSVG(h, 32)}</div>`).join("")}</div>
+    <div class="faces" style="margin:8px 0">${run.picks.map((h) => `<div class="mini" title="${esc(h.name)}">${portraitHTML(h, 32, { eager: true, bare: true })}</div>`).join("")}</div>
     <div class="stack" style="margin-top:auto">
       <button class="btn red" data-action="fight">FIGHT</button>
       <div class="btn-row">
@@ -283,14 +283,14 @@ function fightScreen(state) {
         <div class="who">YOUR FIVE</div>
         <div class="bar"><span id="squad-bar"></span></div>
         <div class="faces" id="squad-faces">${picks
-          .map((h) => `<div class="mini" data-hero="${h.id}" title="${esc(h.name)}">${portraitSVG(h, 28)}</div>`)
+          .map((h) => `<div class="mini" data-hero="${h.id}" title="${esc(h.name)}">${portraitHTML(h, 28, { eager: true, bare: true })}</div>`)
           .join("")}</div>
       </div>
       <div class="side foe" id="foe-side">
         <div class="who">${esc(foe.name)}</div>
         <div class="bar foe"><span id="foe-bar"></span></div>
         <div class="bar shield" id="shield-wrap" hidden><span id="shield-bar"></span></div>
-        <div style="margin-top:6px">${actorArt({ ...foe, kind: foe.kind }, 72)}</div>
+        <div style="margin-top:6px">${portraitHTML({ ...foe, kind: foe.kind }, 84, { eager: true })}</div>
       </div>
     </div>
     <p class="small" id="status-line" style="min-height:1.2em;margin:0"></p>
@@ -316,7 +316,7 @@ function unlockScreen(state) {
       ${tier.enemies
         .map(
           (enemy) => `<div class="enemy-card">
-            ${portraitSVG({ ...enemy, color: tier.color, deep: tier.deep, ink: tier.ink }, 48)}
+            ${portraitHTML({ ...enemy, color: tier.color, deep: tier.deep, ink: tier.ink }, 48)}
             <div><strong>${enemy.emoji} ${esc(enemy.name)}</strong><span>${esc(enemy.abilityName)}</span></div>
           </div>`,
         )
@@ -346,7 +346,7 @@ function resultScreen(state) {
         perfect ? "The Ink Monarch fell." : `Fell to ${esc(fell?.name || "the city")}.`
       }</p>
       <p class="small" style="position:relative">Best streak ${run.bestStreak}. ${esc(names)}</p>
-      <div class="squad-row">${run.picks.map((h) => `<div class="mini">${portraitSVG(h, 48)}</div>`).join("")}</div>
+      <div class="squad-row">${run.picks.map((h) => `<div class="mini">${portraitHTML(h, 48, { eager: true, bare: true })}</div>`).join("")}</div>
       <div class="syn-row" style="margin-top:8px;position:relative">${synergyChips(run.picks)}</div>
       ${dotsHTML(run.history, 99)}
     </article>

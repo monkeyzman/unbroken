@@ -1,8 +1,10 @@
-import { view, paintFight, showStamp, toast } from "./ui.js";
+import { view, paintFight, showStamp, toast } from "./ui.js?v=3";
 import { createRun, resolveNext, heroFromId, shareText, fellTo } from "./run.js";
 import { dailyKey, dailySeed, exhibitSeed } from "./rng.js?v=2";
-import { tierAfterBoss } from "./foes.js";
+import { BOSSES, TIERS, tierAfterBoss } from "./foes.js";
+import { HEROES } from "./roster.js";
 import { isMuted, setMuted, sfx } from "./audio.js";
+import { bindPortraits, preloadPortraits } from "./portraits.js?v=3";
 
 const SAVE_KEY = "unbroken.save.v1";
 const RUN_KEY = "unbroken.run.v1";
@@ -351,6 +353,31 @@ function loadResume() {
 function render() {
   app.innerHTML = view(S);
   window.scrollTo(0, 0);
+  bindPortraits(app);
+  warmPortraits();
+}
+
+function warmPortraits() {
+  const run = S.run;
+  if (!run) {
+    preloadPortraits(HEROES);
+    return;
+  }
+  if (S.screen === "draft") {
+    const step = run.picks.length;
+    preloadPortraits(run.options[step] || []);
+    preloadPortraits(run.options[step + 1] || []);
+    preloadPortraits(run.picks);
+    return;
+  }
+  preloadPortraits(run.picks);
+  const next = run.rounds?.[run.index];
+  if (next) preloadPortraits([next]);
+  if (S.screen === "fight" && S.fight?.foe) preloadPortraits([S.fight.foe]);
+  if (S.screen === "board") {
+    preloadPortraits(BOSSES.map((boss) => ({ ...boss, kind: "boss" })));
+    for (const tier of TIERS) preloadPortraits(tier.enemies);
+  }
 }
 
 function wait(ms) {
