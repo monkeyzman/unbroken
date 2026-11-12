@@ -549,7 +549,7 @@ function progressLine(state) {
 
 function bookScreen(state) {
   const meta = state.meta;
-  const faces = catalog();
+  const faces = catalog().sort((a, b) => (meta.seen?.[a.id] ? 0 : 1) - (meta.seen?.[b.id] ? 0 : 1));
   const frames = unlockedFrames(meta);
   const earned = achievementList().filter((item) => meta.achievements?.[item.id]);
   const locked = achievementList().filter((item) => !meta.achievements?.[item.id]);

@@ -596,7 +596,7 @@ button:focus-visible, .card:focus-visible {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  top: calc(12px + env(safe-area-inset-top));
   transform: translateX(-50%);
   background: var(--ink);
   color: var(--yellow);
