@@ -3,6 +3,7 @@ import { buildSeason } from "./foes.js";
 import { simulateFight } from "./combat.js";
 import { mulberry32, shuffle } from "./rng.js";
 import { synergyBands } from "./synergy.js";
+import { grantFavor, withFavors } from "./favors.js";
 
 export function createRun(seed, mode = "exhibit") {
   const rng = mulberry32(seed >>> 0);
@@ -25,7 +26,35 @@ export function createRun(seed, mode = "exhibit") {
     streak: 0,
     bestStreak: 0,
     history: [],
+    rerolls: 2,
+    locks: [null, null, null, null, null],
+    rerollCounts: [0, 0, 0, 0, 0],
+    favors: [],
+    favorLog: [],
   };
+}
+
+export function rerollSlot(run, step) {
+  if (!run.rerolls) return false;
+  const role = ROLES[step]?.id;
+  if (!role) return false;
+  const locked = run.locks?.[step] || null;
+  const current = new Set((run.options[step] || []).map((hero) => hero.id));
+  let pool = HEROES.filter((hero) => hero.role === role && hero.id !== locked && !current.has(hero.id));
+  if (pool.length < (locked ? 2 : 3)) pool = HEROES.filter((hero) => hero.role === role && hero.id !== locked);
+  const rng = mulberry32((run.seed ^ Math.imul(step + 1, 0x85ebca6b) ^ Math.imul((run.rerollCounts[step] || 0) + 1, 0xc2b2ae35)) >>> 0);
+  const drawn = shuffle(pool, rng).filter((hero) => hero.id !== locked);
+  const keep = locked ? HERO_BY_ID[locked] : null;
+  const next = keep ? [keep, ...drawn.slice(0, 2)] : drawn.slice(0, 3);
+  if (next.length < 3 || next.some((hero) => !hero)) return false;
+  if (keep) {
+    const at = Math.max(0, run.options[step].findIndex((hero) => hero.id === locked));
+    next.splice(at, 0, next.shift());
+  }
+  run.options[step] = next.slice(0, 3);
+  run.rerolls -= 1;
+  run.rerollCounts[step] = (run.rerollCounts[step] || 0) + 1;
+  return true;
 }
 
 export function fightRng(run, round) {
@@ -34,7 +63,14 @@ export function fightRng(run, round) {
 
 export function resolveNext(run) {
   const foe = run.rounds[run.index];
-  const result = simulateFight(run.picks, foe, fightRng(run, foe.round));
+  run.favorLog = run.favorLog || [];
+  const logged = foe.kind === "boss" ? run.favorLog.find((item) => item.round === foe.round) : null;
+  const held = !logged && foe.kind === "boss" ? (run.favors || [])[0] : null;
+  const used = logged?.id || held || null;
+  const squad = withFavors(run.picks, used ? [used] : []);
+  const result = simulateFight(squad, foe, fightRng(run, foe.round));
+  if (foe.kind === "boss" && !logged && used) run.favorLog.push({ round: foe.round, id: used });
+  if (foe.kind === "boss" && !logged) run.favors = [];
   if (result.win) {
     run.wins += 1;
     run.streak += 1;
@@ -45,6 +81,7 @@ export function resolveNext(run) {
   }
   run.history.push({
     round: foe.round,
+    id: foe.id,
     win: result.win,
     name: foe.name,
     title: foe.title || foe.epithet,
@@ -109,7 +146,12 @@ export function draftBy(run, chooser, rng) {
 }
 
 export function playSeason(run) {
-  while (run.index < 30) resolveNext(run);
+  run.favors = run.favors || [];
+  while (run.index < 30) {
+    resolveNext(run);
+    const last = run.history[run.history.length - 1];
+    if (last?.kind === "boss" && run.index < 30) grantFavor(run);
+  }
   return run;
 }
 

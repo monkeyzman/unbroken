@@ -1,4 +1,4 @@
-import { portraitURL } from "./portraits.js?v=4";
+import { portraitURL } from "./portraits.js?v=5";
 import { fellTo, rankTitle } from "./run.js";
 
 function loadImage(src) {

@@ -1,4 +1,4 @@
-const CACHE = "unbroken-4";
+const CACHE = "unbroken-5";
 
 const SHELL = [
   "./",
@@ -12,6 +12,8 @@ const SHELL = [
   "./js/settings.js",
   "./js/portraits.js",
   "./js/sharecard.js",
+  "./js/favors.js",
+  "./js/meta.js",
   "./js/combat.js",
   "./js/foes.js",
   "./js/roster.js",
@@ -39,7 +41,12 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
-      .then(() => self.clients.claim()),
+      .then(() => self.clients.claim())
+      .then(() =>
+        self.clients.matchAll({ type: "window" }).then((clients) => {
+          for (const client of clients) client.postMessage({ type: "build", build: 5 });
+        }),
+      ),
   );
 });
 

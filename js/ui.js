@@ -1,9 +1,11 @@
 import { FACTIONS, ROLES, ROLE_STAT, RARITY_LABEL, STATS, STAT_NAME, heroTotal } from "./roster.js";
 import { TIERS, BOSSES, tierAfterBoss } from "./foes.js";
 import { synergyBands, loudestStat, printedSums, SPECTRUM_BONUS } from "./synergy.js";
-import { bindPortraits, portraitHTML } from "./portraits.js?v=4";
+import { bindPortraits, portraitHTML } from "./portraits.js?v=5";
+import { favorById } from "./favors.js";
+import { FRAMES, achievementList, catalog, nextFrame, seenCount, unlockedFrames } from "./meta.js";
 import { fellTo, rankTitle, shareText } from "./run.js";
-import { flash, floater, impact, lunge, shake } from "./fx.js?v=4";
+import { flash, floater, impact, lunge, shake } from "./fx.js?v=5";
 
 const BOSS_FX = {
   vesper: { color: "#d5def5", kind: "shard" },
@@ -37,15 +39,21 @@ function openCls(state, extra = "") {
   return ["screen", extra, state.entered ? "enter" : ""].filter(Boolean).join(" ");
 }
 
+function tipButton(label, tip, extra = "") {
+  return `<button type="button" class="chip live ${extra}" style="${extra}" data-action="tip" data-tip="${esc(tip)}">${label}</button>`;
+}
+
 function synergyChips(heroes, { preview = false } = {}) {
   if (!heroes.length) return `<span class="chip soft">Match a faction and the link lights up.</span>`;
   const { bands, spectrum } = synergyBands(heroes);
   const chips = [];
-  if (spectrum) chips.push(`<span class="chip live">Five Banners · +${Math.round(SPECTRUM_BONUS * 100)}% all</span>`);
+  if (spectrum) {
+    chips.push(tipButton(`Five Banners · +${Math.round(SPECTRUM_BONUS * 100)}% all`, "Five factions. +8% to every stat. No pair bonus on top."));
+  }
   for (const band of bands) {
     const pct = Math.round(band.bonus * 100);
     chips.push(
-      `<span class="chip live" style="background:${band.color}">${esc(band.name)} ×${band.count} · +${pct}% ${esc(STAT_NAME[band.stat])}</span>`,
+      `<button type="button" class="chip live" style="background:${band.color}" data-action="tip" data-tip="${esc(`${band.name}: ${band.count} ${band.label} heroes. +${pct}% ${STAT_NAME[band.stat]}.`)}">${esc(band.name)} ×${band.count} · +${pct}% ${esc(STAT_NAME[band.stat])}</button>`,
     );
   }
   if (!chips.length) {
@@ -79,11 +87,13 @@ function jobHook(hero) {
   return "";
 }
 
-function cardHTML(hero, index, picked, deal) {
+function cardHTML(hero, index, picked, deal, skin, locked) {
   const faction = FACTIONS[hero.faction];
   const foil = hero.rarity === "common" ? "" : `<span class="foil" aria-hidden="true"></span>`;
   const hook = jobHook(hero);
-  return `<button class="card rarity-${hero.rarity} fac-${hero.faction}${picked ? " picked" : ""}${deal ? " deal" : ""}" data-action="highlight" data-i="${index}" aria-pressed="${picked ? "true" : "false"}">
+  const skinClass = skin && skin !== "classic" ? ` skin-${skin}` : "";
+  return `<button class="card rarity-${hero.rarity} fac-${hero.faction}${skinClass}${picked ? " picked" : ""}${deal ? " deal" : ""}${locked ? " locked" : ""}" data-action="highlight" data-i="${index}" aria-pressed="${picked ? "true" : "false"}">
+    ${locked ? `<span class="lock-tag">LOCKED</span>` : ""}
     ${foil}
     <div class="card-face">${portraitHTML(hero, 72, { eager: true })}<div class="total">TOT ${heroTotal(hero)}</div></div>
     <div>
@@ -129,6 +139,11 @@ function hypeHTML(run) {
   return `<div class="hype hype-${Math.min(run.streak, 30)}"><b class="display">${esc(big)}</b><span>${esc(sub)}</span></div>`;
 }
 
+function coachHTML(state, id, text) {
+  if (!state.meta || state.meta.tutorial === "done" || state.meta.coach?.[id]) return "";
+  return `<aside class="coach"><p>${esc(text)}</p><div class="btn-row"><button class="btn" data-action="coach" data-id="${id}">GOT IT</button><button class="btn ghost" data-action="coach-skip">SKIP TIPS</button></div></aside>`;
+}
+
 function motionLabel(motion) {
   if (motion === "full") return "Full motion";
   if (motion === "reduce") return "Reduced";
@@ -140,6 +155,7 @@ export function view(state) {
   if (screen === "how") return howScreen(state);
   if (screen === "board") return boardScreen(state);
   if (screen === "settings") return settingsScreen(state);
+  if (screen === "book") return bookScreen(state);
   if (screen === "draft") return draftScreen(state);
   if (screen === "confirm") return confirmScreen(state);
   if (screen === "season") return seasonScreen(state);
@@ -177,7 +193,8 @@ function titleScreen(state) {
     <div class="ticket glass">
       <span class="kicker">BEST ON THIS PHONE</span>
       ${bestLine}
-      <div class="sub">${daily ? `Today’s daily: ${daily.wins}-${daily.losses}.` : `Daily ${esc(state.dailyKey)} UTC is open. Same cards for everyone.`}</div>
+      <div class="sub">${daily ? `Today’s daily: ${daily.wins}-${daily.losses}.` : `Daily ${esc(state.dailyKey)} UTC is open. Same cards for everyone.`}${state.meta?.dailyStreak ? ` Streak ${state.meta.dailyStreak}.` : ""}</div>
+      ${state.meta?.nearLoss ? `<div class="sub">Nearest miss: ${esc(state.meta.nearLoss.name)} at ${state.meta.nearLoss.foeLeft}%.</div>` : ""}
     </div>
     <div class="stack" style="margin-top:16px">
       ${state.resume ? `<button class="btn ink" data-action="resume">RESUME</button>` : ""}
@@ -187,6 +204,7 @@ function titleScreen(state) {
         <button class="btn ghost" data-action="how">HOW IT WORKS</button>
         <button class="btn ghost" data-action="board">THREAT BOARD</button>
       </div>
+      <button class="btn ghost" data-action="book">BOOK ${seenCount(state.meta)}/81</button>
     </div>
     <p class="small muted" style="margin-top:auto">Original heroes only. Nothing here is borrowed from a comic company.</p>
   </section>`;
@@ -248,7 +266,7 @@ function howScreen(state) {
       <article class="panel gloss">
         <h2 class="display">What the stats do</h2>
         <p><b>Power</b> ends fights. <b>Speed</b> swings first and can slip a grab. <b>Smarts</b> burns shields. <b>Defense</b> keeps the squad standing and can body-block a hunt. <b>Teamwork</b> steadies luck, cracks a mirror, and can scribble a cut hero back in.</p>
-        <p class="small">Read the wanted poster before you tap Fight. The cheat is the fight.</p>
+        <p class="small">Read the wanted poster before you tap Fight. The cheat is the fight. After a boss you can hold one favor and spend it on the next boss. Two rerolls, and a lock, are the whole draft trick.</p>
       </article>
     </div>
   </section>`;
@@ -291,17 +309,22 @@ function draftScreen(state) {
       <span class="kicker">DRAFT ${step + 1}/5</span>
       <button class="icon-btn" data-action="undo" ${step === 0 ? "disabled" : ""} aria-label="Undo last pick">↩</button>
     </div>
+    ${coachHTML(state, "draft", "Tap a card. The line under the name says if they can do the job. Lock one face, then reroll the other two. You get two rerolls for the whole draft.")}
     <div class="role-head">
       <div class="steps">${ROLES.map((_, i) => `<i class="${i < step ? "done" : i === step ? "on" : ""}"></i>`).join("")}</div>
       <h2 class="display">${role.emoji} ${esc(role.name).toUpperCase()}</h2>
       <p class="small" style="margin:4px 0 8px">${esc(role.blurb)}</p>
     </div>
     <div class="scroll">
-      ${options.map((hero, i) => cardHTML(hero, i, i === state.hi, state.justDealt)).join("")}
+      ${options.map((hero, i) => cardHTML(hero, i, i === state.hi, state.justDealt, state.meta?.equipped, state.run.locks?.[step] === hero.id)).join("")}
     </div>
     <footer class="dock">
       <div class="slots">${slotsHTML(state.run.picks)}</div>
       <div class="syn-row${linkClass(preview)}">${synergyChips(preview, { preview: state.hi >= 0 })}</div>
+      <div class="btn-row">
+        <button class="btn ghost" data-action="lock" ${state.hi < 0 ? "disabled" : ""}>${state.run.locks?.[step] && options[state.hi]?.id === state.run.locks[step] ? "UNLOCK" : "LOCK"}</button>
+        <button class="btn ghost" data-action="reroll" ${state.run.rerolls ? "" : "disabled"}>REROLL · ${state.run.rerolls || 0}</button>
+      </div>
       <button class="btn" data-action="recruit" ${state.hi < 0 ? "disabled" : ""}>RECRUIT</button>
     </footer>
   </section>`;
@@ -337,6 +360,7 @@ function seasonScreen(state) {
   const next = run.rounds[run.index];
   const roundLabel = next.kind === "boss" ? `ROUND ${next.round} · BOSS` : `ROUND ${next.round} · ${esc(next.tierName)}`;
   return `<section class="${openCls(state, "season-screen")}">
+    ${coachHTML(state, "season", "The yellow box is the cheat. Answer it, then fight. A favor you are holding spends on the next boss.")}
     <div class="topbar">
       <button class="icon-btn" data-action="title" aria-label="Title">⌂</button>
       <span class="kicker">${roundLabel}</span>
@@ -347,6 +371,7 @@ function seasonScreen(state) {
       <div class="streak${run.streak >= 5 ? " hot" : ""}">STREAK ${run.streak}</div>
     </div>
     ${recapHTML(run)}
+    ${heldFavorHTML(run)}
     ${hypeHTML(run)}
     ${dotsHTML(run.history, next.round)}
     <article class="poster${next.kind === "boss" ? " wanted-boss" : ""}">
@@ -355,7 +380,7 @@ function seasonScreen(state) {
         <p class="kicker" style="margin:0">${next.kind === "boss" ? esc(next.title) : esc(next.tierName)}</p>
         <h3 class="display">${esc(next.name)}</h3>
         <p class="small" style="margin:4px 0">${esc(next.epithet)}</p>
-        <div class="trick">${esc(next.banner)}</div>
+        <button class="trick tip" data-action="tip" data-tip="${esc(next.banner)} This is the rule of the fight.">${esc(next.banner)}</button>
       </div>
     </article>
     <div class="faces" style="margin:8px 0">${run.picks.map((h) => `<div class="mini" title="${esc(h.name)}">${portraitHTML(h, 32, { eager: true, bare: true })}</div>`).join("")}</div>
@@ -436,24 +461,28 @@ function unlockScreen(state) {
   const won = state.unlockWon;
   const run = state.run;
   return `<section class="${openCls(state, won ? "unlock-win" : "unlock-loss")}">
+    ${coachHTML(state, "favor", "Pick one favor. It spends on the next boss, then you choose again. Take the stat that boss cheats you on.")}
     ${hypeHTML(run)}
     <p class="kicker">${won ? "BOSS DOWN. SOMETHING WORSE HEARD." : "YOU DROPPED THE BOSS. THE CITY GOT MEANER ANYWAY."}</p>
     <h2 class="display" style="font-size:58px;margin:6px 0">NEW<br>THREATS</h2>
     <p class="display" style="font-size:28px;margin:0">${esc(tier.name)}</p>
     <p class="small">${esc(tier.rounds)}</p>
     <div class="trick">${esc(tier.fieldName)} · ${esc(tier.fieldText)}</div>
-    <div class="enemy-grid" style="margin-top:10px">
-      ${tier.enemies
-        .map(
-          (enemy) => `<div class="enemy-card">
-            ${portraitHTML({ ...enemy, color: tier.color, deep: tier.deep, ink: tier.ink }, 48)}
-            <div><strong>${enemy.emoji} ${esc(enemy.name)}</strong><span>${esc(enemy.abilityName)}</span></div>
-          </div>`,
-        )
-        .join("")}
+    <div class="scroll">
+      <div class="enemy-grid" style="margin-top:10px">
+        ${tier.enemies
+          .map(
+            (enemy) => `<div class="enemy-card">
+              ${portraitHTML({ ...enemy, color: tier.color, deep: tier.deep, ink: tier.ink }, 48)}
+              <div><strong>${enemy.emoji} ${esc(enemy.name)}</strong><span>${esc(enemy.abilityName)}</span></div>
+            </div>`,
+          )
+          .join("")}
+      </div>
+      <p class="small" style="margin-top:8px">${esc(tier.unlock)}</p>
+      ${(state.offers || []).length ? `<h2 class="display" style="font-size:32px">TAKE ONE FAVOR</h2><p class="small">Spent on the next boss, then it's gone.</p>${(state.offers || []).map((favor) => `<button class="favor${state.favorChoice === favor.id ? " on" : ""}" data-action="pick-favor" data-id="${esc(favor.id)}" aria-pressed="${state.favorChoice === favor.id}"><b>${esc(favor.name)}</b><span>${esc(favor.blurb)}</span></button>`).join("")}` : ""}
     </div>
-    <p class="small" style="margin-top:8px">${esc(tier.unlock)}</p>
-    <button class="btn red" style="margin-top:auto" data-action="onward">ONWARD</button>
+    <button class="btn red" data-action="onward" ${(state.offers || []).length && !state.favorChoice ? "disabled" : ""}>ONWARD</button>
   </section>`;
 }
 
@@ -474,6 +503,7 @@ function resultScreen(state) {
       <div class="rank">${rank}</div>
       <p class="ending">${perfect ? "The Ink Monarch fell. Nobody wrote your ending." : `${esc(fell?.name || "The city")} wrote the last panel.`}</p>
       <p class="small rematch">${perfect ? `Best streak ${run.bestStreak}.` : `Best streak ${run.bestStreak}. The next draft doesn't have to end this way.`}</p>
+      <p class="small progress">${progressLine(state)}</p>
       <p class="small squad-names">${esc(names)}</p>
       <div class="squad-row">${run.picks.map((h) => `<div class="mini">${portraitHTML(h, 48, { eager: true, bare: true })}</div>`).join("")}</div>
       <div class="syn-row${linkClass(run.picks)}" style="margin-top:8px">${synergyChips(run.picks)}</div>
@@ -500,6 +530,57 @@ function resultScreen(state) {
       <div class="tape">${tape}</div>
     </details>
     <p class="small muted" id="share-text" hidden>${esc(shareText(run))}</p>
+  </section>`;
+}
+
+function progressLine(state) {
+  const meta = state.meta;
+  if (!meta) return "";
+  const count = seenCount(meta);
+  const upcoming = nextFrame(meta);
+  const fresh = state.freshAchievements || [];
+  const ach = fresh.length ? ` New: ${fresh.map((item) => item.name).join(", ")}.` : "";
+  const faces = state.freshFaces ? ` ${state.freshFaces} new faces.` : "";
+  const loss = [...(state.run?.history || [])].filter((row) => !row.win && Number.isFinite(row.foeLeft)).sort((a, b) => a.foeLeft - b.foeLeft)[0];
+  const miss = loss ? ` Closest loss this run: ${loss.name} at ${loss.foeLeft}%.` : " No losses this run.";
+  const chase = upcoming ? ` Next frame: ${upcoming.name} — ${upcoming.need}` : " Every frame is unlocked.";
+  return `Book ${count}/81.${faces}${ach}${miss} ${chase}`;
+}
+
+function bookScreen(state) {
+  const meta = state.meta;
+  const faces = catalog();
+  const frames = unlockedFrames(meta);
+  const earned = achievementList().filter((item) => meta.achievements?.[item.id]);
+  const locked = achievementList().filter((item) => !meta.achievements?.[item.id]);
+  return `<section class="${openCls(state)}">
+    <div class="topbar"><button class="btn ghost" data-action="title">BACK</button><span class="kicker">BOOK ${seenCount(meta)}/81</span></div>
+    <div class="scroll">
+      <article class="panel gloss">
+        <h2 class="display">Frames</h2>
+        <div class="frame-row">
+          ${FRAMES.map((frame) => {
+            const open = frames.some((item) => item.id === frame.id);
+            const on = meta.equipped === frame.id;
+            return `<button class="frame-pick${on ? " on" : ""}" data-action="equip-frame" data-id="${frame.id}" ${open ? "" : "disabled"}><b>${esc(frame.name)}</b><span>${open ? (on ? "Equipped" : "Tap to equip") : esc(frame.need)}</span></button>`;
+          }).join("")}
+        </div>
+      </article>
+      <p class="small">${meta.nearLoss ? `Nearest miss: ${esc(meta.nearLoss.name)} at ${meta.nearLoss.foeLeft}%. ` : ""}${meta.dailyStreak ? `Daily streak ${meta.dailyStreak}. ` : ""}${earned.length} achievements.</p>
+      <div class="book-grid">
+        ${faces
+          .map((face) => {
+            const known = meta.seen?.[face.id];
+            if (!known) return `<div class="book-cell locked" title="Not seen yet"><span>?</span><small>???</small></div>`;
+            return `<div class="book-cell" title="${esc(known.name)}">${portraitHTML({ id: face.id, kind: face.kind === "bosses" ? "boss" : face.kind === "heroes" ? undefined : "mob", faction: face.faction, emoji: face.emoji }, 72, { bare: true })}<small>${esc(known.name)}</small></div>`;
+          })
+          .join("")}
+      </div>
+      <article class="panel">
+        <h2 class="display">Still to earn</h2>
+        ${locked.map((item) => `<p class="small"><b>${esc(item.name)}.</b> ${esc(item.text)}</p>`).join("") || `<p class="small">The book is finished.</p>`}
+      </article>
+    </div>
   </section>`;
 }
 
@@ -637,6 +718,12 @@ export function marginOf(result) {
   if (!result.win && foePct <= 24) return { kind: "close", text: `SO CLOSE · ${result.foe?.name || "They"} had ${foePct}% left` };
   if (!result.win) return { kind: "fair", text: `${result.foe?.name || "They"} still had ${foePct}%. The swing was earned.` };
   return { kind: "clean", text: `${squadPct}% of the squad still standing` };
+}
+
+function heldFavorHTML(run) {
+  const favor = favorById((run.favors || [])[0]);
+  if (!favor) return "";
+  return `<p class="recap">Holding ${esc(favor.name)}. It spends on the next boss.</p>`;
 }
 
 function recapHTML(run) {

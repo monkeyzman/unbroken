@@ -1,13 +1,15 @@
-import { beatImpact, hideBossIntro, paintFight, showBossIntro, showStamp, toast, view } from "./ui.js?v=4";
-import { createRun, fellTo, heroFromId, resolveNext, shareText } from "./run.js";
+import { beatImpact, hideBossIntro, paintFight, showBossIntro, showStamp, toast, view } from "./ui.js?v=5";
+import { createRun, fellTo, heroFromId, rerollSlot, resolveNext, shareText } from "./run.js";
+import { grantFavor, offerFavors } from "./favors.js";
+import { loadMeta, noteRoster, recordRun, saveMeta } from "./meta.js";
 import { dailyKey, dailySeed, exhibitSeed } from "./rng.js?v=2";
 import { BOSSES, TIERS, tierAfterBoss } from "./foes.js";
 import { HEROES } from "./roster.js";
-import { configureAudio, primeAudio, resumeAudio, sfx, startBed, suspendAudio } from "./audio.js?v=4";
-import { buzz, loadSettings, motionReduced, saveSettings } from "./settings.js?v=4";
-import { bindPortraits, preloadPortraits } from "./portraits.js?v=4";
-import { stopFx, syncFx } from "./fx.js?v=4";
-import { renderShareCard } from "./sharecard.js?v=4";
+import { configureAudio, primeAudio, resumeAudio, sfx, startBed, suspendAudio } from "./audio.js?v=5";
+import { buzz, loadSettings, motionReduced, saveSettings } from "./settings.js?v=5";
+import { bindPortraits, preloadPortraits } from "./portraits.js?v=5";
+import { stopFx, syncFx } from "./fx.js?v=5";
+import { renderShareCard } from "./sharecard.js?v=5";
 
 const SAVE_KEY = "unbroken.save.v1";
 const RUN_KEY = "unbroken.run.v1";
@@ -34,6 +36,11 @@ const S = {
   hypeFor: "",
   introRelease: null,
   audioOn: false,
+  meta: loadMeta(),
+  offers: [],
+  favorChoice: null,
+  freshAchievements: [],
+  freshFaces: 0,
 };
 
 configureAudio(S.set);
@@ -155,6 +162,60 @@ const actions = {
     S.screen = "board";
     render();
   },
+  book() {
+    S.screen = "book";
+    render();
+  },
+  "equip-frame"(button) {
+    const id = button.dataset.id;
+    if (!id) return;
+    S.meta.equipped = id;
+    saveMeta(S.meta);
+    render();
+  },
+  lock() {
+    if (!S.run || S.hi < 0) return;
+    const step = S.run.picks.length;
+    const hero = S.run.options[step]?.[S.hi];
+    if (!hero) return;
+    S.run.locks = S.run.locks || [null, null, null, null, null];
+    S.run.locks[step] = S.run.locks[step] === hero.id ? null : hero.id;
+    persist();
+    render();
+  },
+  reroll() {
+    if (!S.run?.rerolls) return;
+    const step = S.run.picks.length;
+    if (!rerollSlot(S.run, step)) return;
+    const locked = S.run.locks?.[step];
+    S.hi = locked ? S.run.options[step].findIndex((hero) => hero.id === locked) : -1;
+    try {
+      sfx.flip();
+    } catch {
+      /* Ignore. */
+    }
+    persist();
+    render();
+  },
+  "pick-favor"(button) {
+    S.favorChoice = button.dataset.id || null;
+    render();
+  },
+  tip(button) {
+    const text = button.dataset.tip;
+    if (text) toast(text);
+  },
+  coach(button) {
+    S.meta.coach = S.meta.coach || {};
+    if (button.dataset.id) S.meta.coach[button.dataset.id] = true;
+    saveMeta(S.meta);
+    render();
+  },
+  "coach-skip"() {
+    S.meta.tutorial = "done";
+    saveMeta(S.meta);
+    render();
+  },
   "new-run"() {
     startExhibition();
   },
@@ -181,6 +242,8 @@ const actions = {
     const hero = S.run.options[step][S.hi];
     if (!hero) return;
     S.run.picks.push(hero);
+    noteRoster(S.meta, S.run);
+    saveMeta(S.meta);
     S.hi = -1;
     S.screen = S.run.picks.length === 5 ? "confirm" : "draft";
     try {
@@ -221,7 +284,12 @@ const actions = {
   },
   "sim-all"() {
     if (!S.run) return;
-    while (S.run.index < 30) resolveNext(S.run);
+    S.run.favors = S.run.favors || [];
+    while (S.run.index < 30) {
+      resolveNext(S.run);
+      const last = S.run.history[S.run.history.length - 1];
+      if (last?.kind === "boss" && S.run.index < 30) grantFavor(S.run);
+    }
     finish();
   },
   speed() {
@@ -276,6 +344,12 @@ const actions = {
     afterFight();
   },
   onward() {
+    if (S.favorChoice && !(S.run.favors || []).includes(S.favorChoice)) {
+      S.run.favors = S.run.favors || [];
+      S.run.favors.push(S.favorChoice);
+    }
+    S.favorChoice = null;
+    S.offers = [];
     if (S.run.index >= 30) finish();
     else {
       S.screen = "season";
@@ -416,6 +490,8 @@ function afterFight() {
   if (foe.kind === "boss" && foe.round < 30) {
     S.unlockTier = tierAfterBoss(foe.round);
     S.unlockWon = S.fight.win;
+    S.offers = offerFavors(S.run);
+    S.favorChoice = null;
     S.screen = "unlock";
     persist();
     render();
@@ -451,10 +527,19 @@ function finish() {
     if (!prev || better(record, prev)) S.save.daily[key] = { ...record };
   }
   localStorage.setItem(SAVE_KEY, JSON.stringify(S.save));
+  const logged = recordRun(S.meta, S.run, S.run.dailyKey || S.dailyKey);
+  saveMeta(S.meta);
+  S.freshAchievements = logged.achievements;
+  S.freshFaces = logged.faces;
   sessionStorage.removeItem(RUN_KEY);
   S.resume = null;
   S.screen = "result";
   render();
+  try {
+    if (logged.achievements.length) toast(logged.achievements.length === 1 ? logged.achievements[0].name : `${logged.achievements.length} new achievements`);
+  } catch {
+    /* Ignore. */
+  }
   try {
     if (S.run.wins === 30) {
       sfx.hype();
@@ -469,17 +554,36 @@ function restore(data) {
   if (!data) return;
   const run = createRun(data.seed, data.mode);
   run.dailyKey = data.dailyKey || null;
+  if (Array.isArray(data.optionIds) && data.optionIds.length === 5) {
+    run.options = data.optionIds.map((slot) => (slot || []).map((id) => heroFromId(id)).filter(Boolean));
+  }
+  if (Number.isFinite(data.rerolls)) run.rerolls = data.rerolls;
+  if (Array.isArray(data.locks)) run.locks = data.locks;
+  if (Array.isArray(data.rerollCounts)) run.rerollCounts = data.rerollCounts;
   run.picks = (data.pickIds || []).map((id) => heroFromId(id)).filter(Boolean);
+  run.favors = [];
+  run.favorLog = data.favorLog || [];
   const target = Math.min(data.index || 0, 30);
   while (run.index < target) resolveNext(run);
+  run.favors = data.favorIds || [];
   S.run = run;
   if (data.dailyKey) S.dailyKey = data.dailyKey;
   if (run.index >= 30) {
     finish();
     return;
   }
-  S.screen = run.picks.length >= 5 && data.screen === "confirm" ? "confirm" : data.screen === "draft" ? "draft" : "season";
-  if (S.screen === "draft" && run.picks.length >= 5) S.screen = "confirm";
+  const bosses = run.history.filter((row) => row.kind === "boss" && row.round < 30);
+  if (run.picks.length >= 5 && run.favors.length < bosses.length) {
+    const lastBoss = bosses[bosses.length - 1];
+    S.unlockTier = tierAfterBoss(lastBoss.round);
+    S.unlockWon = lastBoss.win;
+    S.offers = offerFavors(run);
+    S.favorChoice = null;
+    S.screen = "unlock";
+  } else {
+    S.screen = run.picks.length >= 5 && data.screen === "confirm" ? "confirm" : data.screen === "draft" ? "draft" : "season";
+    if (S.screen === "draft" && run.picks.length >= 5) S.screen = "confirm";
+  }
   S.hi = -1;
   persist();
   render();
@@ -497,6 +601,12 @@ function persist() {
     mode: S.run.mode,
     dailyKey: S.run.dailyKey || null,
     pickIds: S.run.picks.map((hero) => hero.id),
+    optionIds: (S.run.options || []).map((slot) => slot.map((hero) => hero.id)),
+    rerolls: S.run.rerolls,
+    locks: S.run.locks,
+    rerollCounts: S.run.rerollCounts,
+    favorIds: S.run.favors || [],
+    favorLog: S.run.favorLog || [],
     index: S.run.index,
     screen,
   };
@@ -717,6 +827,15 @@ function clearTilt(event) {
 
 function registerWorker() {
   if (!("serviceWorker" in navigator)) return;
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController) return;
+    toast("New build ready. Reload to pick it up.");
+  });
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    const build = Number(document.querySelector('meta[name="unbroken-build"]')?.content || 0);
+    if (event.data?.type === "build" && event.data.build > build) toast("New build ready. Reload to pick it up.");
+  });
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   });
