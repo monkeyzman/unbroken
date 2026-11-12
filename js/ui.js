@@ -67,9 +67,22 @@ function statBlock(hero) {
   }).join("");
 }
 
+function jobHook(hero) {
+  if (hero.role === "tank" && hero.stats.def >= 96) return "Body-blocks a hunt.";
+  if (hero.role === "tank") return `${96 - hero.stats.def} Defense short of a body-block.`;
+  if (hero.role === "tech" && hero.stats.smt >= 97) return "Can reboot a hush.";
+  if (hero.role === "tech") return `${97 - hero.stats.smt} Smarts short of a reboot.`;
+  if (hero.role === "speed" && hero.stats.spd >= 104) return "Slips a grab.";
+  if (hero.role === "speed") return `${104 - hero.stats.spd} Speed short of slipping a grab.`;
+  if (hero.role === "brawl" && hero.stats.pwr >= 97) return "Ends fights before they get weird.";
+  if (hero.role === "wild" && hero.stats.tmw >= 97) return "Steadies luck and cracks a mirror.";
+  return "";
+}
+
 function cardHTML(hero, index, picked, deal) {
   const faction = FACTIONS[hero.faction];
   const foil = hero.rarity === "common" ? "" : `<span class="foil" aria-hidden="true"></span>`;
+  const hook = jobHook(hero);
   return `<button class="card rarity-${hero.rarity} fac-${hero.faction}${picked ? " picked" : ""}${deal ? " deal" : ""}" data-action="highlight" data-i="${index}" aria-pressed="${picked ? "true" : "false"}">
     ${foil}
     <div class="card-face">${portraitHTML(hero, 72, { eager: true })}<div class="total">TOT ${heroTotal(hero)}</div></div>
@@ -80,6 +93,7 @@ function cardHTML(hero, index, picked, deal) {
       </div>
       <div class="hname">${hero.emoji} ${esc(hero.name)}</div>
       <div class="epi">${esc(hero.epithet)}</div>
+      ${hook ? `<div class="hook${/short of/.test(hook) ? "" : " hot"}">${esc(hook)}</div>` : ""}
       <div class="stats">${statBlock(hero)}</div>
     </div>
   </button>`;
@@ -332,6 +346,7 @@ function seasonScreen(state) {
       <div class="record display">${run.wins}–${run.losses}</div>
       <div class="streak${run.streak >= 5 ? " hot" : ""}">STREAK ${run.streak}</div>
     </div>
+    ${recapHTML(run)}
     ${hypeHTML(run)}
     ${dotsHTML(run.history, next.round)}
     <article class="poster${next.kind === "boss" ? " wanted-boss" : ""}">
@@ -614,17 +629,39 @@ export function hideBossIntro() {
   if (el) el.hidden = true;
 }
 
+export function marginOf(result) {
+  const foePct = result.foeMax ? Math.round((result.foeHp / result.foeMax) * 100) : 0;
+  const squadPct = result.squadMax ? Math.round((result.squadHp / result.squadMax) * 100) : 0;
+  if (result.win && result.foe?.kind === "boss") return { kind: "huge", text: "THE PAGE IS YOURS" };
+  if (result.win && squadPct <= 22) return { kind: "hair", text: `BY A HAIR · ${squadPct}% of the squad left` };
+  if (!result.win && foePct <= 24) return { kind: "close", text: `SO CLOSE · ${result.foe?.name || "They"} had ${foePct}% left` };
+  if (!result.win) return { kind: "fair", text: `${result.foe?.name || "They"} still had ${foePct}%. The swing was earned.` };
+  return { kind: "clean", text: `${squadPct}% of the squad still standing` };
+}
+
+function recapHTML(run) {
+  const last = run.history?.[run.history.length - 1];
+  if (!last) return "";
+  if (last.win && last.squadLeft <= 22) return `<p class="recap hair">Last one was a hair. ${last.squadLeft}% left.</p>`;
+  if (last.win) return `<p class="recap">${esc(last.name)} fell. ${last.squadLeft}% of the squad held.</p>`;
+  if ((last.foeLeft ?? 100) <= 24) return `<p class="recap close">${esc(last.name)} had ${last.foeLeft}% left. Answer the cheat.</p>`;
+  return `<p class="recap">${esc(last.name)} kept ${last.foeLeft ?? "?"}%. Read the poster, then swing.</p>`;
+}
+
 export function showStamp(result) {
   const stamp = document.getElementById("fight-stamp");
   const skip = document.getElementById("fight-skip");
   const next = document.getElementById("fight-next");
   const root = document.getElementById("fight-root");
   if (!stamp) return;
+  const margin = marginOf(result);
   stamp.hidden = false;
-  stamp.textContent = result.stamp;
+  stamp.innerHTML = `${esc(result.stamp)}<small class="margin ${margin.kind}">${esc(margin.text)}</small>`;
   stamp.classList.toggle("loss", !result.win);
   stamp.classList.toggle("boss-win", !!(result.win && result.foe?.kind === "boss"));
+  stamp.classList.toggle("close", margin.kind === "close" || margin.kind === "hair");
   if (root && result.win && result.foe?.kind === "boss") root.classList.add("boss-down");
+  if (root && (margin.kind === "close" || margin.kind === "hair")) root.classList.add("close-call");
   if (skip) skip.hidden = true;
   if (next) next.hidden = false;
 }

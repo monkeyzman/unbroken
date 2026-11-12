@@ -55,6 +55,7 @@ export function resolveNext(run) {
     stamp: result.stamp,
     summary: result.summary,
     squadLeft: result.squadMax ? Math.round((result.squadHp / result.squadMax) * 100) : 0,
+    foeLeft: result.foeMax ? Math.round((result.foeHp / result.foeMax) * 100) : 0,
   });
   run.index += 1;
   return result;

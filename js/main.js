@@ -333,7 +333,7 @@ async function play(result, quick) {
     } catch {
       /* The intro still shows if the sting fails. */
     }
-    await wait(Math.max(520, (reduced ? 700 : 1500) / (S.set.battleSpeed || 1)));
+    await wait(Math.max(420, (reduced ? 520 : 880) / (S.set.battleSpeed || 1)));
     if (token !== S.anim) return;
     hideBossIntro();
   }
@@ -359,8 +359,13 @@ async function play(result, quick) {
 
 function beatMs(beat) {
   const speed = S.set.battleSpeed || 1;
-  const heavy = beat?.tone === "bad" || beat?.tone === "good" ? 640 : beat?.tone === "info" ? 420 : 540;
-  return Math.max(150, heavy / speed);
+  const text = beat?.text || "";
+  const quote = text.startsWith("“") || text.startsWith('"');
+  let base = 380;
+  if (/drops\.|pavement|second wind/i.test(text)) base = 760;
+  else if (beat?.tone === "info" || quote) base = 220;
+  else if (beat?.tone === "bad" || beat?.tone === "good") base = 460;
+  return Math.max(110, Math.round(base / speed));
 }
 
 function voiceBeat(beat) {
